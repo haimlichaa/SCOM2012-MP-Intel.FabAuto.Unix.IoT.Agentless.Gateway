@@ -1,0 +1,823 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ManagementPack SchemaVersion="2.0" ContentReadable="true" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Manifest>
+    <Identity>
+      <ID>Intel.FabAuto.Unix.Exadata</ID>
+      <Version>2.0.0.1</Version>
+    </Identity>
+    <Name>Unix.Exadata</Name>
+    <References>
+      <Reference Alias="UnixAgentless">
+        <ID>Intel.FabAuto.Unix.Agentless</ID>
+        <Version>2.0.0.1</Version>
+        <PublicKeyToken>2e51fec925ac5922</PublicKeyToken>
+      </Reference>
+      <Reference Alias="SCDW">
+        <ID>Microsoft.SystemCenter.DataWarehouse.Library</ID>
+        <Version>7.0.8432.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="SC">
+        <ID>Microsoft.SystemCenter.Library</ID>
+        <Version>7.0.8432.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="Unix">
+        <ID>Microsoft.Unix.Library</ID>
+        <Version>7.4.4339.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="System">
+        <ID>System.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="Perf">
+        <ID>System.Performance.Library</ID>
+        <Version>7.0.8432.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+    </References>
+  </Manifest>
+  <TypeDefinitions>
+    <EntityTypes>
+      <ClassTypes>
+        <ClassType ID="Intel.FabAuto.Unix.Exadata.Computer" Accessibility="Internal" Abstract="false" Base="System!System.LogicalHardware" Hosted="true" Singleton="false" />
+        <ClassType ID="Intel.FabAuto.Unix.Exadata.Compute.Node" Accessibility="Internal" Abstract="false" Base="Intel.FabAuto.Unix.Exadata.Computer" Hosted="true" Singleton="false" />
+        <ClassType ID="Intel.FabAuto.Unix.Exadata.Cell.Node" Accessibility="Internal" Abstract="false" Base="Intel.FabAuto.Unix.Exadata.Computer" Hosted="true" Singleton="false"></ClassType>
+      </ClassTypes>
+      <RelationshipTypes>
+        <RelationshipType ID="Intel.FabAuto.Unix.Agentless.ComputerHostsLocalApplication" Accessibility="Public" Abstract="false" Base="System!System.Hosting">
+          <Source ID="Source" MinCardinality="0" MaxCardinality="2147483647" Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer" />
+          <Target ID="Target" MinCardinality="0" MaxCardinality="2147483647" Type="Intel.FabAuto.Unix.Exadata.Computer" />
+        </RelationshipType>
+      </RelationshipTypes>
+    </EntityTypes>
+    <ModuleTypes>
+      <DataSourceModuleType ID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag" Accessibility="Internal" Batching="false">
+        <Configuration>
+          <xsd:element minOccurs="1" name="IntervalSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="TargetSystem" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="DS" TypeID="UnixAgentless!Intel.FabAuto.Unix.Agentless.Server.TimedSSHCommand.PropertyBag.DataSource">
+                <Interval>$Config/IntervalSeconds$</Interval>
+                <SyncTime />
+                <TargetSystem>$Config/TargetSystem$</TargetSystem>
+                <!--Get SAR data for specific PerfObject from last 10min only.  Specifying just shy of 20min to ensure we don't miss the 10min window-->
+                <SSHCommand>day=`date "+%d"`;for c in PhysicalDisk Processor Memory Paging Load Swap Network NetworkErr;do e=`date +%s`;((s=e-1200));e=`date -d @$e +%H:%M:%S`;s=`date -d @$s +%H:%M:%S`;case $c in "Processor") opt="" ;; "Network") opt="-n DEV" ;; "NetworkErr") opt="-n EDEV" ;; "Memory") opt="-r" ;; "Swap") opt="-S" ;; "Paging") opt="-W" ;; "PhysicalDisk") opt="-d" ;; "Load") opt="-q" ;; *) opt="NONE" ;; esac;  if [[ $opt != "NONE" ]];then LC_ALL=en_US /usr/bin/sadf -d /var/log/sa/sa$day -- -s $s -e $e $opt;fi &gt; /tmp/devperf.out;if [ `cat /tmp/devperf.out|wc -l` -le 1 ];then  e=`date +%s`;((s=e-1400)); LC_ALL=en_US /usr/bin/sadf -d /var/log/sa/sa$day -- -s $s -e $e $opt &gt; /tmp/devperf.out;fi ; if [ $c = "PhysicalDisk" ];then   flash=`lsscsi | grep ATA | awk '{print $NF " "}' | tr -d '\n'|sed "s/\/dev\///g"`;devmap=`find  /dev/ -maxdepth 1 -type b -exec ls -l {} \;|awk '{print "dev"$5,$6,$10}'|sed "s/, /-/"|sed "s/\/dev\///"|sed "s/ /,/g"`;for i in $devmap;do d=`echo $i|cut -f1 -d","`;e=`echo $i|cut -f2 -d","`;sed -i "s/;$d;/;$e;/g" /tmp/devperf.out;done;for i in $flash;do sed -i "s/;$i;/;${i}-flash;/g" /tmp/devperf.out ;done;fi;sed -i "s/^/$c;/" /tmp/devperf.out ;cat /tmp/devperf.out;done;/bin/rm -f /tmp/devperf.out</SSHCommand>
+                <Timeout>120</Timeout>
+                <UserName>$RunAs[Name="Unix!Microsoft.Unix.ActionAccount"]/UserName$</UserName>
+                <Password>$RunAs[Name="Unix!Microsoft.Unix.ActionAccount"]/Password$</Password>
+                <PSScriptName>Intel.FabAuto.Unix.Exadata.Server.ps1</PSScriptName>
+                <PSScriptBody>
+                  
+#*********************************************************************
+#   Purpose: Parse SAR output from UNIX 
+#   Author:  Haim Lichaa 
+#   initial 01/11/2016
+#   Last Modified: 01/11/2016 - Initial
+#                  02/16/2016 - Haim L.  converted to non-native PS script
+#*********************************************************************
+# Parameters: 
+#
+# Example:  
+#   PowerCLI C:\&gt; powershell .\script.ps1 -ReturnCode 0 -StdOut "rf3sxdb302n2.rf3stg.mfgint.intel.com;597;2016-01-11 16:20:01 UTC;416642920;112599632;21.28;1291172;99482280;2817040;0.50"  
+#                                       
+#	
+#************************************************************************
+param([string]$StdOut)
+
+$VERSION="1.0.7"
+$PerfObjects="PhysicalDisk","Processor","Memory","Paging","Load","Swap","Network","NetworkErr"
+#Constants used for event logging
+&lt;#  Sample STDOut Remove comment to test
+$StdOut="PhysicalDisk;# hostname;interval;timestamp;DEV;tps;rd_sec/s;wr_sec/s;avgrq-sz;avgqu-sz;await;svctm;%util
+PhysicalDisk;orsox1cm06.rf3stg.mfgint.intel.com;596;2016-02-08 16:10:01 UTC;sds;0.23;138.01;8.86;638.55;0.00;7.87;5.53;0.13
+Processor;# hostname;interval;timestamp;CPU;%user;%nice;%system;%iowait;%steal;%idle
+Processor;orsox1cm06.rf3stg.mfgint.intel.com;596;2016-02-08 16:10:01 UTC;-1;0.52;0.08;0.91;0.07;0.00;98.42
+Memory;# hostname;interval;timestamp;kbmemfree;kbmemused;%memused;kbbuffers;kbcached;kbcommit;%commit
+Memory;orsox1cm06.rf3stg.mfgint.intel.com;596;2016-02-08 16:10:01 UTC;42872480;22719444;34.64;382432;3550180;24123676;35.64
+Paging;# hostname;interval;timestamp;pswpin/s;pswpout/s
+Paging;orsox1cm06.rf3stg.mfgint.intel.com;596;2016-02-08 16:10:01 UTC;0.00;0.00
+Load;# hostname;interval;timestamp;runq-sz;plist-sz;ldavg-1;ldavg-5;ldavg-15
+Load;orsox1cm06.rf3stg.mfgint.intel.com;596;2016-02-08 16:10:01 UTC;0;558;1.34;1.30;1.47
+Swap;# hostname;interval;timestamp;kbswpfree;kbswpused;%swpused;kbswpcad;%swpcad
+Swap;orsox1cm06.rf3stg.mfgint.intel.com;596;2016-02-08 16:10:01 UTC;2097084;0;0.00;0;0.00
+Network;# hostname;interval;timestamp;IFACE;rxpck/s;txpck/s;rxkB/s;txkB/s;rxcmp/s;txcmp/s;rxmcst/s
+Network;orsox1cm06.rf3stg.mfgint.intel.com;596;2016-02-08 16:10:01 UTC;lo;3.00;3.00;0.15;0.15;0.00;0.00;0.00
+NetworkErr;# hostname;interval;timestamp;IFACE;rxerr/s;txerr/s;coll/s;rxdrop/s;txdrop/s;txcarr/s;rxfram/s;rxfifo/s;txfifo/s
+NetworkErr;orsox1cm06.rf3stg.mfgint.intel.com;596;2016-02-08 16:10:01 UTC;lo;0.00;0.00;0.00;0.00;0.00;0.00;0.00;0.00;0.00
+#&gt;
+
+$StdOutold=$StdOut
+$StdOut=$StdOut.Replace("\n","`n")
+
+$TARGETCOMPUTER=($StdOut.Split("`n")[1]).Split(';')[1]
+
+$SCRIPT_NAME			= 'Intel.FabAuto.Unix.Exadata.Server.PropertyBag.'+$TARGETCOMPUTER+'.ps1'
+$Logfile = "c:\Windows\Temp\$SCRIPT_NAME.log"
+#==================================================================================
+# Sub:		LogWrite
+# Purpose:	Logs to c:\windows\temp if c:\windows\temp\omdebug.txt exists
+#==================================================================================
+
+Function LogWrite
+{
+   Param ([string]$logstring)
+   $LogTime = Get-Date -Format "MM-dd-yyyy_hh-mm-ss"
+   if (Test-Path $Logfile) {
+       if ((Get-Item $Logfile).length -gt 1024kb){
+            Remove-Item $Logfile
+       }
+   }
+   if (Test-Path C:\windows\Temp\omdebug.txt){
+        $domain=[Environment]::UserDomainName
+        $user=[Environment]::UserName
+        Add-content $Logfile -value "[$LogTime]  $domain\$user : $logstring"
+   }
+}
+#======================= START OF MAIN ==========================================
+## VERY Important.  Need to set PSModule path So we can import.
+#The script will fail without this.
+#Get the current module path
+$p = [Environment]::GetEnvironmentVariable(“PSModulePath”)
+
+#Add to the existing path the additional path to our module
+$p += “;d:\Program Files\System Center 2012\Operations Manager\Powershell\”
+
+#Set the new path to the PSModulePath variable
+[Environment]::SetEnvironmentVariable(“PSModulePath”,$p)
+
+try {
+Import-Module  OperationsManager
+#add OpsMgr snapin
+add-pssnapin "Microsoft.EnterpriseManagement.OperationsManager.Client";
+}
+catch [Exception] {
+LogWrite "Import-Module Exception: ",$_.Exception.Message
+exit 1
+}
+
+
+
+#Start by setting up API object.
+$api = New-Object -comObject 'MOM.ScriptAPI'
+LogWrite "Script version $VERSION starting: parameters passed:`r`n STDOUT= $StdOutold , AdditionalParams=$AdditionalParams"
+
+
+$lines=$StdOut.Split("`n")
+foreach ($PerfObject in $PerfObjects){
+    $matched=$lines | where {$_ -match "$PerfObject;"}	
+    
+	#first let's grab the header information and place in array $headers
+	$headers=$matched[0].Replace("$PerfObject;# ","").Split(";")
+	
+	###
+	#Parse StdOut and Generate property bag
+	$matched|ForEach-Object{
+	    if ([string]::IsNullOrEmpty($_)) {return}
+	    if ( ($_ -match "$PerfObject;# ") -or ($_ -match "RESTART")){return}
+	    $data=$_ -replace "`t","" -replace "`n","" -replace "`r","" -replace "$PerfObject;",""
+		$data=$data.Trim().Split(";")
+		
+		#Create SCOM PropertyBag
+		$bag = $api.CreatePropertyBag()
+		$bag.AddValue("Object",$PerfObject)
+		
+		for ($i=0; $i -lt $headers.Count ; $i++){
+	    if ($headers[$i].Contains("CPU")){
+	      if ($data[$i] = "-1"){
+	        $data[$i]="_Total"
+	      }
+	    }
+	    
+	    ## Since these objects don't have instances we'll need to make one up to avoid getting error
+	    if ($PerfObject.Contains("Load") -or $PerfObject.Contains("Swap") -or $PerfObject.Contains("Memory") -or $PerfObject.Contains("Paging")){
+	     # $PerfObject,'_Total'
+		 try {
+		  $bag.AddValue($PerfObject,"_Total")
+		  }
+		  catch {
+		  	
+			}
+	    }
+
+    $h=$headers[$i].Trim()
+		$d=$data[$i].Trim()
+		$bag.AddValue($h,$d)   
+	  LogWrite "Add Value [$h=$d]"
+		#"Add Value $h=$d"
+		}
+		#$bag
+		## Uncomment below, and comment above if using nonnative powershell only
+	    $api.AddItem($bag)
+	}
+}
+
+## Uncomment below if using nonnative powershell only
+$api.ReturnItems()
+
+LogWrite "$SCRIPT_NAME completed for $TARGETCOMPUTER"                      
+
+                </PSScriptBody>
+                <PSArguments>'$Data///stdout$'</PSArguments>
+                <FilterExpression>
+                  <RegExExpression>
+                    <ValueExpression>
+                      <XPathQuery>Property[@Name='hostname']</XPathQuery>
+                    </ValueExpression>
+                    <Operator>MatchesRegularExpression</Operator>
+                    <Pattern>^[a-zA-Z0-9].*</Pattern>
+                  </RegExExpression>
+                </FilterExpression>
+              </DataSource>
+            </MemberModules>
+            <Composition>
+              <Node ID="DS" />
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.PropertyBagData</OutputType>
+      </DataSourceModuleType>
+      <DataSourceModuleType ID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance" Accessibility="Internal" Batching="false">
+        <Configuration>
+          <xsd:element minOccurs="1" name="IntervalSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="TargetSystem" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="Object" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="Instance" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="Counter" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag">
+                <IntervalSeconds>$Config/IntervalSeconds$</IntervalSeconds>
+                <TargetSystem>$Config/TargetSystem$</TargetSystem>
+              </DataSource>
+              <ConditionDetection ID="Filter" TypeID="System!System.ExpressionFilter">
+                <Expression>
+                  <SimpleExpression>
+                    <ValueExpression>
+                      <XPathQuery Type="String">Property[@Name='Object']</XPathQuery>
+                    </ValueExpression>
+                    <Operator>Equal</Operator>
+                    <ValueExpression>
+                      <Value Type="String">$Config/Object$</Value>
+                    </ValueExpression>
+                  </SimpleExpression>
+                </Expression>
+              </ConditionDetection>
+              <ConditionDetection ID="Mapper" TypeID="Perf!System.Performance.DataGenericMapper">
+                <ObjectName>$Config/Object$</ObjectName>
+                <CounterName>$Config/Counter$</CounterName>
+                <InstanceName>$Data/Property[@Name='$Config/Instance$']$</InstanceName>
+                <Value>$Data/Property[@Name='$Config/Counter$']$</Value>
+              </ConditionDetection>
+            </MemberModules>
+            <Composition>
+              <Node ID="Mapper">
+                <Node ID="Filter">
+                  <Node ID="DS" />
+                </Node>
+              </Node>
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>Perf!System.Performance.Data</OutputType>
+      </DataSourceModuleType>
+    </ModuleTypes>
+  </TypeDefinitions>
+  <Monitoring>
+    <Discoveries>
+      <Discovery ID="Intel.FabAuto.Unix.Exadata.Computer.Discovery" Target="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer" Enabled="true" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+          <DiscoveryClass TypeID="Intel.FabAuto.Unix.Exadata.Computer"></DiscoveryClass>
+        </DiscoveryTypes>
+        <DataSource ID="DS" TypeID="UnixAgentless!Intel.FabAuto.Agentless.TimedSshCommand.Discovery.DataSource">
+          <Interval>7200</Interval>
+          <SyncTime></SyncTime>
+          <TargetSystem>$Target/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+          <ShellCommand>ls -d /opt/oracle.ExaWatcher|wc -l</ShellCommand>
+          <Port>22</Port>
+          <Timeout>60</Timeout>
+          <UserName>$RunAs[Name="Unix!Microsoft.Unix.ActionAccount"]/UserName$</UserName>
+          <Password>$RunAs[Name="Unix!Microsoft.Unix.ActionAccount"]/Password$</Password>
+          <FilterExpression>
+            <RegExExpression>
+              <ValueExpression>
+                <XPathQuery>//stdout</XPathQuery>
+              </ValueExpression>
+              <Operator>MatchesRegularExpression</Operator>
+              <Pattern>^[1-9].*</Pattern>
+            </RegExExpression>
+          </FilterExpression>
+          <ClassId>$MPElement[Name="Intel.FabAuto.Unix.Exadata.Computer"]$</ClassId>
+          <InstanceSettings>
+            <Settings>
+              <Setting>
+                <Name>$MPElement[Name='UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer']/PrincipalName$</Name>
+                <Value>$Target/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</Value>
+              </Setting>
+              <Setting>
+                <Name>$MPElement[Name='System!System.Entity']/DisplayName$</Name>
+                <Value>$Target/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</Value>
+              </Setting>
+            </Settings>
+          </InstanceSettings>
+        </DataSource>
+      </Discovery>
+      <Discovery ID="Intel.FabAuto.Unix.Exadata.Cell.Node.Discovery" Target="Intel.FabAuto.Unix.Exadata.Computer" Enabled="true" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+          <DiscoveryClass TypeID="Intel.FabAuto.Unix.Exadata.Cell.Node"></DiscoveryClass>
+        </DiscoveryTypes>
+        <DataSource ID="DS" TypeID="UnixAgentless!Intel.FabAuto.Agentless.TimedSshCommand.Discovery.DataSource">
+          <Interval>14400</Interval>
+          <SyncTime></SyncTime>
+          <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+          <ShellCommand>grep DBORA /etc/fstab|wc -l</ShellCommand>
+          <Port>22</Port>
+          <Timeout>60</Timeout>
+          <UserName>$RunAs[Name="Unix!Microsoft.Unix.ActionAccount"]/UserName$</UserName>
+          <Password>$RunAs[Name="Unix!Microsoft.Unix.ActionAccount"]/Password$</Password>
+          <FilterExpression>
+            <RegExExpression>
+              <ValueExpression>
+                <XPathQuery>//stdout</XPathQuery>
+              </ValueExpression>
+              <Operator>MatchesRegularExpression</Operator>
+              <Pattern>^0.*</Pattern>
+            </RegExExpression>
+          </FilterExpression>
+          <ClassId>$MPElement[Name="Intel.FabAuto.Unix.Exadata.Cell.Node"]$</ClassId>
+          <InstanceSettings>
+            <Settings>
+              <Setting>
+                <Name>$MPElement[Name='UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer']/PrincipalName$</Name>
+                <Value>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</Value>
+              </Setting>
+              <Setting>
+                <Name>$MPElement[Name='System!System.Entity']/DisplayName$</Name>
+                <Value>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</Value>
+              </Setting>
+            </Settings>
+          </InstanceSettings>
+        </DataSource>
+      </Discovery>
+      <Discovery ID="Intel.FabAuto.Unix.Exadata.Compute.Node.Discovery" Target="Intel.FabAuto.Unix.Exadata.Computer" Enabled="true" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+          <DiscoveryClass TypeID="Intel.FabAuto.Unix.Exadata.Compute.Node"></DiscoveryClass>
+        </DiscoveryTypes>
+        <DataSource ID="DS" TypeID="UnixAgentless!Intel.FabAuto.Agentless.TimedSshCommand.Discovery.DataSource">
+          <Interval>14400</Interval>
+          <SyncTime></SyncTime>
+          <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+          <ShellCommand>grep DBORA /etc/fstab|wc -l</ShellCommand>
+          <Port>22</Port>
+          <Timeout>60</Timeout>
+          <UserName>$RunAs[Name="Unix!Microsoft.Unix.ActionAccount"]/UserName$</UserName>
+          <Password>$RunAs[Name="Unix!Microsoft.Unix.ActionAccount"]/Password$</Password>
+          <FilterExpression>
+            <RegExExpression>
+              <ValueExpression>
+                <XPathQuery>//stdout</XPathQuery>
+              </ValueExpression>
+              <Operator>MatchesRegularExpression</Operator>
+              <Pattern>^[1-9].*</Pattern>
+            </RegExExpression>
+          </FilterExpression>
+          <ClassId>$MPElement[Name="Intel.FabAuto.Unix.Exadata.Compute.Node"]$</ClassId>
+          <InstanceSettings>
+            <Settings>
+              <Setting>
+                <Name>$MPElement[Name='UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer']/PrincipalName$</Name>
+                <Value>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</Value>
+              </Setting>
+              <Setting>
+                <Name>$MPElement[Name='System!System.Entity']/DisplayName$</Name>
+                <Value>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</Value>
+              </Setting>
+            </Settings>
+          </InstanceSettings>
+        </DataSource>
+      </Discovery>
+    </Discoveries>
+    <Rules>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Network.RXBPS.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Network</Object>
+            <Instance>IFACE</Instance>
+            <Counter>rxkB/s</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <!--<WriteAction ID="WriteToDB" TypeID="SC!Microsoft.SystemCenter.CollectPerformanceData" />-->
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Network.TXBPS.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Network</Object>
+            <Instance>IFACE</Instance>
+            <Counter>txkB/s</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Processor.PercentIdle.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Processor</Object>
+            <Instance>CPU</Instance>
+            <Counter>%idle</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Processor.Percentiowait.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Processor</Object>
+            <Instance>CPU</Instance>
+            <Counter>%iowait</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Processor.PercentSystem.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Processor</Object>
+            <Instance>CPU</Instance>
+            <Counter>%system</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Processor.PercentUser.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Processor</Object>
+            <Instance>CPU</Instance>
+            <Counter>%user</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Network.RXErrPerSec.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>NetworkErr</Object>
+            <Instance>IFACE</Instance>
+            <Counter>rxerr/s</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Network.TXErrPerSec.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>NetworkErr</Object>
+            <Instance>IFACE</Instance>
+            <Counter>txerr/s</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Network.RXDropsPerSec.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>NetworkErr</Object>
+            <Instance>IFACE</Instance>
+            <Counter>rxdrop/s</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Network.TXDropsPerSec.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>NetworkErr</Object>
+            <Instance>IFACE</Instance>
+            <Counter>txdrop/s</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Memory.PercentMemoryUsed.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Memory</Object>
+            <Instance>Memory</Instance>
+            <Counter>%memused</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Memory.KBMemoryFree.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Memory</Object>
+            <Instance>Memory</Instance>
+            <Counter>kbmemfree</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Swap.PercentSwapUsed.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Swap</Object>
+            <Instance>Swap</Instance>
+            <Counter>%swpused</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Swap.KBSwapUsed.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Swap</Object>
+            <Instance>Swap</Instance>
+            <Counter>kbswpfree</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Paging.PagesSwapInPerSec.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Paging</Object>
+            <Instance>Paging</Instance>
+            <Counter>pswpin/s</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Paging.PagesSwapOutPerSec.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Paging</Object>
+            <Instance>Paging</Instance>
+            <Counter>pswpout/s</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Load.RunQueue.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Load</Object>
+            <Instance>Load</Instance>
+            <Counter>runq-sz</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.Load.loadAvg.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>Load</Object>
+            <Instance>Load</Instance>
+            <Counter>ldavg-5</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.PercentUtil.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>PhysicalDisk</Object>
+            <Instance>DEV</Instance>
+            <Counter>%util</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.AvgWaitMS.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>PhysicalDisk</Object>
+            <Instance>DEV</Instance>
+            <Counter>await</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.AvgQueueSize.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>PhysicalDisk</Object>
+            <Instance>DEV</Instance>
+            <Counter>avgqu-sz</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.ReadSectorsPerSec.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>PhysicalDisk</Object>
+            <Instance>DEV</Instance>
+            <Counter>rd_sec/s</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.WriteSectorsPerSec.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>PhysicalDisk</Object>
+            <Instance>DEV</Instance>
+            <Counter>wr_sec/s</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+      <Rule ID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.TransfersPerSec.Performance.Collection" Enabled="true" Target="Intel.FabAuto.Unix.Exadata.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>PerformanceCollection</Category>
+        <DataSources>
+          <DataSource ID="DS" TypeID="Intel.FabAuto.Unix.Exadata.Server.PropertyBag.Performance">
+            <IntervalSeconds>600</IntervalSeconds>
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.Computer"]/PrincipalName$</TargetSystem>
+            <Object>PhysicalDisk</Object>
+            <Instance>DEV</Instance>
+            <Counter>tps</Counter>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDW" TypeID="SCDW!Microsoft.SystemCenter.DataWarehouse.PublishPerformanceData" />
+        </WriteActions>
+      </Rule>
+    </Rules>
+  </Monitoring>
+  <LanguagePacks>
+    <LanguagePack ID="ENU" IsDefault="true">
+      <DisplayStrings>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Computer">
+          <Name>Exadata Computer</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Compute.Node">
+          <Name>Exadata Compute Node</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Cell.Node">
+          <Name>Exadata Cell Node</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.TransfersPerSec.Performance.Collection">
+          <Name>Exadata PhysicalDisk TransfersPerSec Collection Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.ReadSectorsPerSec.Performance.Collection">
+          <Name>Exadata PhysicalDisk ReadSectorsPerSec Collection Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.WriteSectorsPerSec.Performance.Collection">
+          <Name>Exadata PhysicalDisk WriteSectorsPerSec Collection Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.AvgQueueSize.Performance.Collection">
+          <Name>Exadata PhysicalDisk AvgQueueSize Collection Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.AvgWaitMS.Performance.Collection">
+          <Name>Exadata PhysicalDisk AvgWaitMS Collection Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Server.PhysicalDisk.PercentUtil.Performance.Collection">
+          <Name>Exadata PhysicalDisk PercentUtil Collection Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Server.Load.loadAvg.Performance.Collection">
+          <Name>Exadata Load loadAvg Collection Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Server.Load.RunQueue.Performance.Collection">
+          <Name>Exadata Load RunQueue Collection Rule</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.Exadata.Server.Paging.PagesSwapOutPerSec.Performance.Collection">
+          <Name>Exadata Paging PagesSwapOutPerSec Collection Rule</Name>
+        </DisplayString>
+      </DisplayStrings>
+      <KnowledgeArticles></KnowledgeArticles>
+    </LanguagePack>
+  </LanguagePacks>
+</ManagementPack>

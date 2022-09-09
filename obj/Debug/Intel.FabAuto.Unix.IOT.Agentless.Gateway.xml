@@ -1,0 +1,129 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ManagementPack SchemaVersion="2.0" ContentReadable="true" xmlns:xsd="http://www.w3.org/2001/XMLSchema">
+  <Manifest>
+    <Identity>
+      <ID>Intel.FabAuto.Unix.IOT.Agentless.Gateway</ID>
+      <Version>3.0.0.0</Version>
+    </Identity>
+    <Name>Unix.IOT.Agentless.Gateway</Name>
+    <References>
+      <Reference Alias="UnixAgentless">
+        <ID>Intel.FabAuto.Unix.IOT.Agentless</ID>
+        <Version>3.0.0.2</Version>
+        <PublicKeyToken>4c0e267fbc48ec8a</PublicKeyToken>
+      </Reference>
+      <Reference Alias="System">
+        <ID>System.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+    </References>
+  </Manifest>
+  <TypeDefinitions>
+    <EntityTypes>
+      <ClassTypes>
+        <ClassType ID="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer" Accessibility="Internal" Abstract="false" Base="System!System.LogicalHardware" Hosted="true" Singleton="false" />
+        <ClassType ID="Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump" Accessibility="Internal" Abstract="false" Base="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer" Hosted="true" Singleton="false"></ClassType>
+      </ClassTypes>
+      <RelationshipTypes>
+        <RelationshipType ID="Intel.FabAuto.Unix.IOT.Agentless.ComputerHostsLocalApplication" Accessibility="Public" Abstract="false" Base="System!System.Hosting">
+          <Source ID="Source" MinCardinality="0" MaxCardinality="2147483647" Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer" />
+          <Target ID="Target" MinCardinality="0" MaxCardinality="2147483647" Type="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer" />
+        </RelationshipType>
+      </RelationshipTypes>
+    </EntityTypes>
+  </TypeDefinitions>
+  <Monitoring>
+    <Discoveries>
+      <Discovery ID="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer.Discovery" Target="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer" Enabled="true" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+          <DiscoveryClass TypeID="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer"></DiscoveryClass>
+        </DiscoveryTypes>
+        <DataSource ID="DS" TypeID="UnixAgentless!Intel.FabAuto.Agentless.TimedSshCommand.Discovery.DataSource">
+          <Interval>7200</Interval>
+          <SyncTime></SyncTime>
+          <TargetSystem>$Target/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</TargetSystem>
+          <ShellCommand>ls /etc/iot-release.ini|wc -l</ShellCommand>
+          <Port>22</Port>
+          <Timeout>60</Timeout>
+          <UserName>$RunAs[Name="UnixAgentless!Intel.FabAuto.IoT.Agentless.ActionAccount"]/UserName$</UserName>
+          <Password>$RunAs[Name="UnixAgentless!Intel.FabAuto.IoT.Agentless.ActionAccount"]/Password$</Password>
+          <FilterExpression>
+            <RegExExpression>
+              <ValueExpression>
+                <XPathQuery>//stdout</XPathQuery>
+              </ValueExpression>
+              <Operator>MatchesRegularExpression</Operator>
+              <Pattern>^[1-9].*</Pattern>
+            </RegExExpression>
+          </FilterExpression>
+          <ClassId>$MPElement[Name="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer"]$</ClassId>
+          <InstanceSettings>
+            <Settings>
+              <Setting>
+                <Name>$MPElement[Name='UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer']/PrincipalName$</Name>
+                <Value>$Target/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</Value>
+              </Setting>
+              <Setting>
+                <Name>$MPElement[Name='System!System.Entity']/DisplayName$</Name>
+                <Value>$Target/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</Value>
+              </Setting>
+            </Settings>
+          </InstanceSettings>
+        </DataSource>
+      </Discovery>
+      <Discovery ID="Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump.Discovery" Target="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer" Enabled="true" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+        <Category>Discovery</Category>
+        <DiscoveryTypes>
+          <DiscoveryClass TypeID="Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump"></DiscoveryClass>
+        </DiscoveryTypes>
+        <DataSource ID="DS" TypeID="UnixAgentless!Intel.FabAuto.Agentless.TimedSshCommand.Discovery.DataSource">
+          <Interval>14400</Interval>
+          <SyncTime></SyncTime>
+          <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</TargetSystem>
+          <ShellCommand>jq -r ".pipelines.active" /etc/beryl/app.config.json|grep -c edwards_pump</ShellCommand>
+          <Port>22</Port>
+          <Timeout>60</Timeout>
+          <UserName>$RunAs[Name="UnixAgentless!Intel.FabAuto.IoT.Agentless.ActionAccount"]/UserName$</UserName>
+          <Password>$RunAs[Name="UnixAgentless!Intel.FabAuto.IoT.Agentless.ActionAccount"]/Password$</Password>
+          <FilterExpression>
+            <RegExExpression>
+              <ValueExpression>
+                <XPathQuery>//stdout</XPathQuery>
+              </ValueExpression>
+              <Operator>MatchesRegularExpression</Operator>
+              <Pattern>^0.*</Pattern>
+            </RegExExpression>
+          </FilterExpression>
+          <ClassId>$MPElement[Name="Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump"]$</ClassId>
+          <InstanceSettings>
+            <Settings>
+              <Setting>
+                <Name>$MPElement[Name='UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer']/PrincipalName$</Name>
+                <Value>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</Value>
+              </Setting>
+              <Setting>
+                <Name>$MPElement[Name='System!System.Entity']/DisplayName$</Name>
+                <Value>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</Value>
+              </Setting>
+            </Settings>
+          </InstanceSettings>
+        </DataSource>
+      </Discovery>
+    </Discoveries>
+  </Monitoring>
+  <LanguagePacks>
+    <LanguagePack ID="ENU" IsDefault="true">
+      <DisplayStrings>
+        <DisplayString ElementID="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer">
+          <Name>Agentless IOT Gateway</Name>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump">
+          <Name>Edwards Pump Gateway</Name>
+        </DisplayString>
+      </DisplayStrings>
+      <KnowledgeArticles></KnowledgeArticles>
+    </LanguagePack>
+  </LanguagePacks>
+</ManagementPack>

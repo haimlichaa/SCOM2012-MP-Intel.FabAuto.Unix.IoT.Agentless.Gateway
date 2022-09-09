@@ -1,0 +1,25 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio 15
+VisualStudioVersion = 15.0.28010.2003
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{D4B43EB3-688B-4EEE-86BD-088F0B28ABB3}") = "Unix.IOT.Agentless.Gateway", "Unix.IOT.Agentless.Gateway.mpproj", "{070CD6C0-3516-4D3E-833B-60F1B9E7EEFD}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x86 = Debug|x86
+		Release|x86 = Release|x86
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{070CD6C0-3516-4D3E-833B-60F1B9E7EEFD}.Debug|x86.ActiveCfg = Debug|x86
+		{070CD6C0-3516-4D3E-833B-60F1B9E7EEFD}.Debug|x86.Build.0 = Debug|x86
+		{070CD6C0-3516-4D3E-833B-60F1B9E7EEFD}.Release|x86.ActiveCfg = Release|x86
+		{070CD6C0-3516-4D3E-833B-60F1B9E7EEFD}.Release|x86.Build.0 = Release|x86
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {40A7819A-A5FF-4902-A9EC-EB1782E170D6}
+	EndGlobalSection
+EndGlobal

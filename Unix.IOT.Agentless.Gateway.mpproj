@@ -1,0 +1,86 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <ProjectGuid>{070cd6c0-3516-4d3e-833b-60f1b9e7eefd}</ProjectGuid>
+    <RootNamespace>Intel.FabAuto.Unix.IOT.Agentless.Gateway</RootNamespace>
+    <Name>Unix.IOT.Agentless.Gateway</Name>
+    <ManagementPackName>Intel.FabAuto.Unix.IOT.Agentless.Gateway</ManagementPackName>
+    <Version>3.0.0.0</Version>
+    <MpFrameworkVersion>v7.0.1</MpFrameworkVersion>
+    <MpFrameworkProfile>OM</MpFrameworkProfile>
+    <ProductVersion>1.1.0.0</ProductVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <OutputPath>bin\Debug\</OutputPath>
+    <GenerateSealed>True</GenerateSealed>
+    <Company>Intel FabAuto</Company>
+    <Copyright>Copyright (c) Intel FabAuto. All rights reserved.</Copyright>
+    <DelaySigning>False</DelaySigning>
+    <AssemblyOriginatorKeyFile>C:\Users\hlichaa\OneDrive - Intel Corporation\Documents\github.intel.com\Intel.FabAuto.OM2007.keypair.snk</AssemblyOriginatorKeyFile>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>false</DebugSymbols>
+    <OutputPath>bin\Release\</OutputPath>
+    <DelaySigning>false</DelaySigning>
+    <Company>MyCompany</Company>
+    <Copyright>Copyright (c) MyCompany. All rights reserved.</Copyright>
+    <DelaySign>false</DelaySign>
+    <AssemblyOriginatorKeyFile />
+  </PropertyGroup>
+  <ItemGroup>
+    <ManagementPackReference Include="Intel.FabAuto.Unix.IOT.Agentless">
+      <HintPath>C:\Users\hlichaa\OneDrive - Intel Corporation\Documents\github.intel.com\IOT\SCOM2012-MP-Intel.FabAuto.Unix.IOT.Agentless\bin\Debug\Intel.FabAuto.Unix.IOT.Agentless.mp</HintPath>
+      <Alias>UnixAgentless</Alias>
+      <MinVersion>3.0.0.2</MinVersion>
+      <PackageToBundle>False</PackageToBundle>
+    </ManagementPackReference>
+    <ManagementPackReference Include="Microsoft.Linux.Library">
+      <HintPath>C:\Users\hlichaa\OneDrive - Intel Corporation\Documents\github.intel.com\IOT\Reference MPs\Microsoft.Linux.Library.mp</HintPath>
+      <Alias>Linux</Alias>
+      <MinVersion>7.6.1092.0</MinVersion>
+      <PackageToBundle>False</PackageToBundle>
+    </ManagementPackReference>
+    <ManagementPackReference Include="Microsoft.SystemCenter.DataWarehouse.Library">
+      <HintPath>C:\Users\hlichaa\OneDrive - Intel Corporation\Documents\github.intel.com\MPSeal\ManagementPacks.2\Microsoft.SystemCenter.DataWarehouse.Library.mp</HintPath>
+      <Alias>SCDW</Alias>
+      <MinVersion>7.1.10226.0</MinVersion>
+      <PackageToBundle>False</PackageToBundle>
+    </ManagementPackReference>
+    <ManagementPackReference Include="Microsoft.SystemCenter.Library">
+      <Alias>SC</Alias>
+      <PackageToBundle>False</PackageToBundle>
+    </ManagementPackReference>
+    <ManagementPackReference Include="Microsoft.Unix.Library">
+      <HintPath>C:\Users\hlichaa\OneDrive - Intel Corporation\Documents\github.intel.com\IOT\Reference MPs\Microsoft.Unix.Library.mp</HintPath>
+      <Alias>Unix</Alias>
+      <MinVersion>7.6.1092.0</MinVersion>
+      <PackageToBundle>False</PackageToBundle>
+    </ManagementPackReference>
+    <ManagementPackReference Include="Microsoft.Windows.Library">
+      <Alias>Windows</Alias>
+      <PackageToBundle>False</PackageToBundle>
+    </ManagementPackReference>
+    <ManagementPackReference Include="System.Health.Library">
+      <Alias>Health</Alias>
+      <PackageToBundle>False</PackageToBundle>
+    </ManagementPackReference>
+    <ManagementPackReference Include="System.Library">
+      <Alias>System</Alias>
+      <PackageToBundle>False</PackageToBundle>
+    </ManagementPackReference>
+    <ManagementPackReference Include="System.Performance.Library">
+      <HintPath>C:\Users\hlichaa\Documents\github.intel.com\MPSeal\ManagementPacks\System.Performance.Library.mp</HintPath>
+      <Alias>Perf</Alias>
+      <MinVersion>7.0.8432.0</MinVersion>
+      <PackageToBundle>False</PackageToBundle>
+    </ManagementPackReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="Unix.IOT.Agentless.Gateway.mpx">
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath)\Microsoft\VSAC\Microsoft.SystemCenter.OperationsManager.targets" />
+</Project>

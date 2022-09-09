@@ -1,0 +1,7 @@
+Unix.IOT.Agentless.Gateway.mpx*Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer*5*10*ClassType
+Unix.IOT.Agentless.Gateway.mpx*Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump*6*10*ClassType
+Unix.IOT.Agentless.Gateway.mpx*Intel.FabAuto.Unix.IOT.Agentless.ComputerHostsLocalApplication*11*10*RelationshipType
+Unix.IOT.Agentless.Gateway.mpx*Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer.Discovery*27*8*Discovery
+Unix.IOT.Agentless.Gateway.mpx*Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump.Discovery*65*8*Discovery
+Unix.IOT.Agentless.Gateway.mpx*Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer*138*10*DisplayString
+Unix.IOT.Agentless.Gateway.mpx*Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump*141*10*DisplayString
