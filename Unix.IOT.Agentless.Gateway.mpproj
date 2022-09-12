@@ -33,7 +33,7 @@
     <ManagementPackReference Include="Intel.FabAuto.Unix.IOT.Agentless">
       <HintPath>C:\Users\hlichaa\OneDrive - Intel Corporation\Documents\github.intel.com\IOT\SCOM2012-MP-Intel.FabAuto.Unix.IOT.Agentless\bin\Debug\Intel.FabAuto.Unix.IOT.Agentless.mp</HintPath>
       <Alias>UnixAgentless</Alias>
-      <MinVersion>3.0.0.2</MinVersion>
+      <MinVersion>3.0.0.3</MinVersion>
       <PackageToBundle>False</PackageToBundle>
     </ManagementPackReference>
     <ManagementPackReference Include="Microsoft.Linux.Library">

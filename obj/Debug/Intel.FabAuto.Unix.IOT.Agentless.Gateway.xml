@@ -9,8 +9,23 @@
     <References>
       <Reference Alias="UnixAgentless">
         <ID>Intel.FabAuto.Unix.IOT.Agentless</ID>
-        <Version>3.0.0.2</Version>
+        <Version>3.0.0.3</Version>
         <PublicKeyToken>4c0e267fbc48ec8a</PublicKeyToken>
+      </Reference>
+      <Reference Alias="SC">
+        <ID>Microsoft.SystemCenter.Library</ID>
+        <Version>7.0.8432.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="Windows">
+        <ID>Microsoft.Windows.Library</ID>
+        <Version>7.5.8501.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
+      </Reference>
+      <Reference Alias="Health">
+        <ID>System.Health.Library</ID>
+        <Version>7.0.8432.0</Version>
+        <PublicKeyToken>31bf3856ad364e35</PublicKeyToken>
       </Reference>
       <Reference Alias="System">
         <ID>System.Library</ID>
@@ -23,7 +38,7 @@
     <EntityTypes>
       <ClassTypes>
         <ClassType ID="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer" Accessibility="Internal" Abstract="false" Base="System!System.LogicalHardware" Hosted="true" Singleton="false" />
-        <ClassType ID="Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump" Accessibility="Internal" Abstract="false" Base="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer" Hosted="true" Singleton="false"></ClassType>
+        <ClassType ID="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer.Group" Accessibility="Public" Abstract="false" Base="SC!Microsoft.SystemCenter.ComputerGroup" Hosted="false" Singleton="true" Extension="false" />
       </ClassTypes>
       <RelationshipTypes>
         <RelationshipType ID="Intel.FabAuto.Unix.IOT.Agentless.ComputerHostsLocalApplication" Accessibility="Public" Abstract="false" Base="System!System.Hosting">
@@ -32,6 +47,427 @@
         </RelationshipType>
       </RelationshipTypes>
     </EntityTypes>
+    <ModuleTypes>
+      <DataSourceModuleType ID="Intel.FabAuto.IOT.GetAgentAlive.Unix.PropertyBagProvider" Accessibility="Internal" Batching="false">
+        <Configuration>
+          <IncludeSchemaTypes>
+            <SchemaType>Windows!Microsoft.Windows.PowerShellSchema</SchemaType>
+          </IncludeSchemaTypes>
+          <xsd:element minOccurs="1" name="IntervalSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="TimeoutSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="MaxMissingHeartbeats" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="EventLookBackMin" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="WarningEvent" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+          <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+          <OverrideableParameter ID="MaxMissingHeartbeats" Selector="$Config/MaxMissingHeartbeats$" ParameterType="int" />
+          <OverrideableParameter ID="EventLookBackMin" Selector="$Config/EventLookBackMin$" ParameterType="int" />
+          <OverrideableParameter ID="WarningEvent" Selector="$Config/WarningEvent$" ParameterType="int" />
+        </OverrideableParameters>
+        <ModuleImplementation Isolation="Any">
+          <Composite>
+            <MemberModules>
+              <DataSource ID="DS1" TypeID="System!System.Scheduler">
+                <Scheduler>
+                  <SimpleReccuringSchedule>
+                    <Interval>$Config/IntervalSeconds$</Interval>
+                    <SyncTime />
+                  </SimpleReccuringSchedule>
+                  <ExcludeDates />
+                </Scheduler>
+              </DataSource>
+              <ProbeAction ID="PSScript" TypeID="Windows!Microsoft.Windows.PowerShellPropertyBagProbe">
+                <ScriptName>Intel.FabAuto.Custom.IOT.Agentless.GetAgentAlive.Unix.PropertyBagProvider.ps1</ScriptName>
+                <ScriptBody>
+
+                  #*********************************************************************
+                  #   Purpose: Check Agent Heartbeat Events for missing agents
+                  #   How it works: GetAgentlive rule runs a command on the UNIX agent.
+                  #                 When an appropriate response is received, an event in the online db event
+                  #                 table is created (once an hour) which this script screens for
+                  #   Author:  Haim Lichaa
+                  #   initial 9/4/2015
+                  #   Last Modified: 06/03/2021 - haim.lichaa@intel.com added warning state for recovery
+                  #                  04/15/2021 - haim.lichaa@intel.com added configurable event lookback time
+                  #   Example usage: Powershell .\Script.ps1 -ClassName Microsoft.Unix.Computer -MaxMissingHB 1
+                  #*********************************************************************
+                  param($ClassName="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer",$MaxMissingHB=2,$Debug=0,$EventLookBack=-60,$WarningEvent=2)
+                  $VERSION="1.0.6"
+                  #WarningEvent is # of times minus MaxMissingHB tto start recycling
+
+                  #Maximum number of missing heartbeats allowed
+                  [int]$MAXMISSING=$MaxMissingHB
+
+                  #AgentAliveHash save counter file
+                  $AGENTALIVESAVE="c:\windows\temp\IOTAgentlessAlive.csv"
+
+                  #==================================================================================
+                  # Sub:		LogWrite
+                  # Purpose:	Logs to c:\windows\temp if c:\windows\temp\omdebug.txt exists
+                  #==================================================================================
+
+                  Function LogWrite
+                  {
+                  Param ([string]$logstring)
+                  $LogTime = Get-Date -Format "MM-dd-yyyy_hh-mm-ss"
+                  if (Test-Path $Logfile) {
+                  if ((Get-Item $Logfile).length -gt 1024kb){
+                  Remove-Item $Logfile
+                  }
+                  }
+                  if (Test-Path C:\windows\Temp\omdebug.txt){
+                  $domain=[Environment]::UserDomainName
+                  $user=[Environment]::UserName
+                  if ($Debug -eq 1){
+                  echo  "[$LogTime]  $domain\$user : $logstring"
+                  }
+                  Add-content $Logfile -value "[$LogTime]  $domain\$user : $logstring"
+                  }
+                  }
+
+                  #==================================================================================
+                  # Sub:		TestFileAge
+                  # Purpose:	tests a file age and returns $true if older, $false if newer or missing
+                  #==================================================================================
+                  Function TestFileAge
+                  {
+                  Param($file,$minutes)
+                  if (-not (Test-Path $file)) {return $false}
+                  $lastWrite = (get-item $file).LastWriteTime
+                  $timespan = new-timespan  -minutes $minutes
+
+                  if (((get-date) - $lastWrite) -gt $timespan) {
+                  # older
+                  return $true
+                  } else {
+                  # newer
+                  return $false
+                  }
+
+                  }
+
+                  ################      START OF SCRIPT       ################
+
+                  ##Invalidate AgentAlive save file if older than 480 minutes
+                  if ((TestFileAge -file $AGENTALIVESAVE -minutes 480) -eq $true){
+                  Remove-Item $AGENTALIVESAVE
+                  LogWrite "$AGENTALIVESAVE too old, starting from scratch"
+                  }
+
+                  #Initialize counter hashtable, populate previous run
+                  #Otherwise we'll get false positives on first run or after system
+                  #has been in MM for awhile.
+                  $AgentAliveHash = @{}
+                  if (Test-Path $AGENTALIVESAVE) {
+                  $t = Import-Csv -Path $AGENTALIVESAVE -Header "Computer","Count"
+                  foreach($r in $t)
+                  {
+                  try {
+                  [int]$AgentAliveHash[$r.Computer] = $r.Count
+                  }
+                  catch {}
+                  }
+                  }
+
+                  ## VERY Important.  Need to set PSModule path So we can import.
+                  #The script will fail without this.
+                  #Get the current module path
+                  $p = [Environment]::GetEnvironmentVariable(“PSModulePath”)
+
+                  #Add to the existing path the additional path to our module
+                  $setupKey = Get-Item -Path "HKLM:\Software\Microsoft\Microsoft Operations Manager\3.0\Setup";
+                  $installDirectory = $setupKey.GetValue("InstallDirectory") | Split-Path
+                  $psmPath = $installdirectory + '\Powershell\OperationsManager\OperationsManager.psm1'
+                  try {
+                  Import-Module $psmPath
+                  }
+                  catch [Exception] {
+                  LogWrite "1. Import-Module Exception: ",$_.Exception.Message
+                  exit 1
+                  }
+
+                  #Set the new path to the PSModulePath variable
+                  #[Environment]::SetEnvironmentVariable("PSModulePath",$p)
+
+
+                  try {
+                  Import-Module  OperationsManager
+                  #add OpsMgr snapin
+                  add-pssnapin "Microsoft.EnterpriseManagement.OperationsManager.Client";
+                  }
+                  catch [Exception] {
+                  LogWrite "2. Import-Module Exception: ",$_.Exception.Message
+                  exit 1
+                  }
+
+                  $api = new-object -comObject 'MOM.ScriptAPI'
+
+                  $SCRIPT_NAME= 'Intel.FabAuto.Custom.IOT.Agentless.GetAgentAlive.Unix.PropertyBagProvider.ps1'
+                  $Logfile = "c:\windows\temp\$SCRIPT_NAME.log"
+
+                  #Set Exception Handling
+                  $ErrorActionPreference="Stop"
+
+                  LogWrite "Script v$VERSION"
+                  LogWrite "..Argument ClassName=$ClassName"
+                  try {
+                  if ($Debug -eq 1) {
+                  $ClassInstances=Get-SCOMClass -Name $ClassName |Get-SCOMClassInstance |Where-Object {$_.DisplayName -match ".*f24ttb208.*" }
+                  }else{
+                  $ClassInstances=Get-SCOMClass -Name $ClassName |Get-SCOMClassInstance
+                  }
+                  }
+                  catch [Exception] {
+                  LogWrite "Get-SCOMClass Exception: ",$_.Exception.Message
+                  exit 1
+                  }
+                  $Count=$ClassInstances.Count
+                  LogWrite "...Found $Count $ClassName Instances"
+
+                  #Get All UNIX Agents of specific classtype
+                  $AllAgents=$ClassInstances|Where-Object {$_.InMaintenanceMode -like "False"}|Select DisplayName
+                  $Count=$AllAgents.Count
+                  LogWrite "...Found $Count Agents of $ClassName Instances"
+
+                  #Get Alive Events From past hour
+                  $AliveAgents=Get-SCOMEvent (get-scomrule -DisplayName "*IOT Agentless Alive*") -EventLogName WSManEventProvider |where-object { $_.Description -match ".*load.*" -and ($_.TimeAdded -gt (Get-Date).AddMinutes($EventLookBack).ToUniversalTime())}|Select LoggingComputer -Unique
+
+                  $Count=$AliveAgents.Count
+                  LogWrite "....Of which $Count are alive"
+
+
+                  #Find agents missing alive events
+                  foreach ($agent in $AllAgents){
+                  $bag = $api.CreatePropertyBag()
+                  $name=$agent.DisplayName
+                  $bag.AddValue('ComputerName',$agent.DisplayName)
+                  $Count=($AliveAgents|Where-Object {$_.LoggingComputer -eq  $agent.DisplayName}).Count
+                  if ($Count -eq 0) {
+                  LogWrite "========================== $name is missing a heartbeat"
+
+                  #Check if agent previously missed a heartbeat
+                  if ($AgentAliveHash.ContainsKey($name)){
+                  if ($AgentAliveHash.$name -lt $MAXMISSING){
+                  LogWrite "$name $($AgentAliveHash.$name) lt $MAXMISSING"
+                  $AgentAliveHash.$name++
+                  if ($AgentAliveHash.$name -lt $MAXMISSING -and $AgentAliveHash.$name -ge $WarningEvent){
+                  LogWrite "HB missing gt than $WarningEvent but lt $MAXMISSING, setting to warning"
+                  $bag.AddValue('STATUS','WARNING')
+                  }else{
+                  LogWrite "$($AgentAliveHashLess.$name) that $WarningEvent HB missing."
+                  $bag.AddValue('STATUS',"HEALTHY")
+                  }
+                  }
+                  else{
+                  LogWrite "$name $($AgentAliveHash.$name) gt $MAXMISSING"
+                  $AgentAliveHash.$name++
+                  LogWrite "Missed too many heartbeats, not healthy"
+                  $bag.AddValue('STATUS','UNHEALTHY')
+                  }
+                  LogWrite "....$name has $($AgentAliveHashLess.$name)  heartbeats missed"
+                  }else{
+                  $AgentAliveHash.Add($name,1)
+                  LogWrite "....$name first heartbeat missed, excusing"
+                  $bag.AddValue('STATUS',"HEALTHY")
+                  }
+
+                  }else{
+                  LogWrite "$name has a heartbeat"
+                  if ($AgentAliveHash.ContainsKey($name)){
+                  $AgentAliveHash.$name=0
+                  }else{
+                  $AgentAliveHash.Add($name,0)
+                  }
+                  $bag.AddValue('STATUS',"HEALTHY")
+                  }
+                  # Return property bag object (only use with nativepowershell module scripts)
+                  $bag
+                  #uncomment if using non-native powershell scripts
+                  #api.AddItem($bag)
+                  }
+                  #uncomment if using non-native powershell scripts
+                  #$api.ReturnItems()
+
+                  ##Save AgentAliveHash to file for next time
+                  $OutputTable = $AgentAliveHash.getEnumerator() | foreach{
+                  New-Object PSObject -Property ([ordered]@{Computer = $_.Name;Count = $_.Value})
+                  }
+
+                  $OutputTable | Export-CSV $AGENTALIVESAVE -NoTypeInformation
+
+                  LogWrite "Script complete"
+
+
+                </ScriptBody>
+                <Parameters>
+                  <Parameter>
+                    <Name>ClassName</Name>
+                    <Value>Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>MaxMissingHB</Name>
+                    <Value>$Config/MaxMissingHeartbeats$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>EventLookBack</Name>
+                    <Value>$Config/EventLookBackMin$</Value>
+                  </Parameter>
+                  <Parameter>
+                    <Name>WarningEvent</Name>
+                    <Value>$Config/WarningEvent$</Value>
+                  </Parameter>
+                </Parameters>
+                <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+              </ProbeAction>
+            </MemberModules>
+            <Composition>
+              <Node ID="PSScript">
+                <Node ID="DS1" />
+              </Node>
+            </Composition>
+          </Composite>
+        </ModuleImplementation>
+        <OutputType>System!System.PropertyBagData</OutputType>
+      </DataSourceModuleType>
+    </ModuleTypes>
+    <MonitorTypes>
+      <UnitMonitorType ID="Intel.FabAuto.Custom.GetAgentlessAlive.Unix.MonitorType" Accessibility="Internal" RunAs="System!System.PrivilegedMonitoringAccount">
+        <MonitorTypeStates>
+          <MonitorTypeState ID="Healthy" NoDetection="false" />
+          <MonitorTypeState ID="Warning" NoDetection="false" />
+          <MonitorTypeState ID="UnHealthy" NoDetection="false" />
+        </MonitorTypeStates>
+        <Configuration>
+          <xsd:element minOccurs="1" name="ComputerName" type="xsd:string" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="IntervalSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="TimeoutSeconds" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="MaxMissingHeartbeats" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="EventLookBackMin" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+          <xsd:element minOccurs="1" name="WarningEvent" type="xsd:integer" xmlns:xsd="http://www.w3.org/2001/XMLSchema" />
+        </Configuration>
+        <OverrideableParameters>
+          <OverrideableParameter ID="IntervalSeconds" Selector="$Config/IntervalSeconds$" ParameterType="int" />
+          <OverrideableParameter ID="TimeoutSeconds" Selector="$Config/TimeoutSeconds$" ParameterType="int" />
+          <OverrideableParameter ID="MaxMissingHeartbeats" Selector="$Config/MaxMissingHeartbeats$" ParameterType="int" />
+          <OverrideableParameter ID="EventLookBackMin" Selector="$Config/EventLookBackMin$" ParameterType="int" />
+          <OverrideableParameter ID="WarningEvent" Selector="$Config/WarningEvent$" ParameterType="int" />
+        </OverrideableParameters>
+        <MonitorImplementation>
+          <MemberModules>
+            <DataSource ID="DS" TypeID="Intel.FabAuto.IOT.GetAgentAlive.Unix.PropertyBagProvider">
+              <IntervalSeconds>$Config/IntervalSeconds$</IntervalSeconds>
+              <TimeoutSeconds>$Config/TimeoutSeconds$</TimeoutSeconds>
+              <MaxMissingHeartbeats>$Config/MaxMissingHeartbeats$</MaxMissingHeartbeats>
+              <EventLookBackMin>$Config/EventLookBackMin$</EventLookBackMin>
+              <WarningEvent>$Config/WarningEvent$</WarningEvent>
+            </DataSource>
+            <ConditionDetection ID="HealthyFilter" TypeID="System!System.ExpressionFilter">
+              <Expression>
+                <And>
+                  <Expression>
+                    <SimpleExpression>
+                      <ValueExpression>
+                        <XPathQuery Type="String">Property[@Name='ComputerName']</XPathQuery>
+                      </ValueExpression>
+                      <Operator CaseSensitive="false">Equal</Operator>
+                      <ValueExpression>
+                        <Value Type="String">$Config/ComputerName$</Value>
+                      </ValueExpression>
+                    </SimpleExpression>
+                  </Expression>
+                  <Expression>
+                    <SimpleExpression>
+                      <ValueExpression>
+                        <XPathQuery Type="String">Property[@Name='STATUS']</XPathQuery>
+                      </ValueExpression>
+                      <Operator CaseSensitive="false">Equal</Operator>
+                      <ValueExpression>
+                        <Value Type="String">HEALTHY</Value>
+                      </ValueExpression>
+                    </SimpleExpression>
+                  </Expression>
+                </And>
+              </Expression>
+            </ConditionDetection>
+            <ConditionDetection ID="WarningFilter" TypeID="System!System.ExpressionFilter">
+              <Expression>
+                <And>
+                  <Expression>
+                    <SimpleExpression>
+                      <ValueExpression>
+                        <XPathQuery Type="String">Property[@Name='ComputerName']</XPathQuery>
+                      </ValueExpression>
+                      <Operator CaseSensitive="false">Equal</Operator>
+                      <ValueExpression>
+                        <Value Type="String">$Config/ComputerName$</Value>
+                      </ValueExpression>
+                    </SimpleExpression>
+                  </Expression>
+                  <Expression>
+                    <SimpleExpression>
+                      <ValueExpression>
+                        <XPathQuery Type="String">Property[@Name='STATUS']</XPathQuery>
+                      </ValueExpression>
+                      <Operator CaseSensitive="false">Equal</Operator>
+                      <ValueExpression>
+                        <Value Type="String">WARNING</Value>
+                      </ValueExpression>
+                    </SimpleExpression>
+                  </Expression>
+                </And>
+              </Expression>
+            </ConditionDetection>
+            <ConditionDetection ID="unHealthyFilter" TypeID="System!System.ExpressionFilter">
+              <Expression>
+                <And>
+                  <Expression>
+                    <SimpleExpression>
+                      <ValueExpression>
+                        <XPathQuery Type="String">Property[@Name='ComputerName']</XPathQuery>
+                      </ValueExpression>
+                      <Operator CaseSensitive="false">Equal</Operator>
+                      <ValueExpression>
+                        <Value Type="String">$Config/ComputerName$</Value>
+                      </ValueExpression>
+                    </SimpleExpression>
+                  </Expression>
+                  <Expression>
+                    <SimpleExpression>
+                      <ValueExpression>
+                        <XPathQuery Type="String">Property[@Name='STATUS']</XPathQuery>
+                      </ValueExpression>
+                      <Operator CaseSensitive="false">Equal</Operator>
+                      <ValueExpression>
+                        <Value Type="String">UNHEALTHY</Value>
+                      </ValueExpression>
+                    </SimpleExpression>
+                  </Expression>
+                </And>
+              </Expression>
+            </ConditionDetection>
+          </MemberModules>
+          <RegularDetections>
+            <RegularDetection MonitorTypeStateID="Healthy">
+              <Node ID="HealthyFilter">
+                <Node ID="DS" />
+              </Node>
+            </RegularDetection>
+            <RegularDetection MonitorTypeStateID="Warning">
+              <Node ID="WarningFilter">
+                <Node ID="DS" />
+              </Node>
+            </RegularDetection>
+            <RegularDetection MonitorTypeStateID="UnHealthy">
+              <Node ID="unHealthyFilter">
+                <Node ID="DS" />
+              </Node>
+            </RegularDetection>
+          </RegularDetections>
+        </MonitorImplementation>
+      </UnitMonitorType>
+    </MonitorTypes>
   </TypeDefinitions>
   <Monitoring>
     <Discoveries>
@@ -40,7 +476,7 @@
         <DiscoveryTypes>
           <DiscoveryClass TypeID="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer"></DiscoveryClass>
         </DiscoveryTypes>
-        <DataSource ID="DS" TypeID="UnixAgentless!Intel.FabAuto.Agentless.TimedSshCommand.Discovery.DataSource">
+        <DataSource ID="DS" TypeID="UnixAgentless!Intel.FabAuto.Agentless.IOT.TimedSshCommand.Discovery.DataSource">
           <Interval>7200</Interval>
           <SyncTime></SyncTime>
           <TargetSystem>$Target/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</TargetSystem>
@@ -73,54 +509,97 @@
           </InstanceSettings>
         </DataSource>
       </Discovery>
-      <Discovery ID="Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump.Discovery" Target="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer" Enabled="true" ConfirmDelivery="false" Remotable="true" Priority="Normal">
+      <Discovery ID="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer.Group.DiscoveryRule" Enabled="true" Target="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer.Group" ConfirmDelivery="false" Remotable="true" Priority="Normal">
         <Category>Discovery</Category>
         <DiscoveryTypes>
-          <DiscoveryClass TypeID="Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump"></DiscoveryClass>
+          <DiscoveryRelationship TypeID="SC!Microsoft.SystemCenter.ComputerGroupContainsComputer" />
         </DiscoveryTypes>
-        <DataSource ID="DS" TypeID="UnixAgentless!Intel.FabAuto.Agentless.TimedSshCommand.Discovery.DataSource">
-          <Interval>14400</Interval>
-          <SyncTime></SyncTime>
-          <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</TargetSystem>
-          <ShellCommand>jq -r ".pipelines.active" /etc/beryl/app.config.json|grep -c edwards_pump</ShellCommand>
-          <Port>22</Port>
-          <Timeout>60</Timeout>
-          <UserName>$RunAs[Name="UnixAgentless!Intel.FabAuto.IoT.Agentless.ActionAccount"]/UserName$</UserName>
-          <Password>$RunAs[Name="UnixAgentless!Intel.FabAuto.IoT.Agentless.ActionAccount"]/Password$</Password>
-          <FilterExpression>
-            <RegExExpression>
-              <ValueExpression>
-                <XPathQuery>//stdout</XPathQuery>
-              </ValueExpression>
-              <Operator>MatchesRegularExpression</Operator>
-              <Pattern>^0.*</Pattern>
-            </RegExExpression>
-          </FilterExpression>
-          <ClassId>$MPElement[Name="Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump"]$</ClassId>
-          <InstanceSettings>
-            <Settings>
-              <Setting>
-                <Name>$MPElement[Name='UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer']/PrincipalName$</Name>
-                <Value>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</Value>
-              </Setting>
-              <Setting>
-                <Name>$MPElement[Name='System!System.Entity']/DisplayName$</Name>
-                <Value>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</Value>
-              </Setting>
-            </Settings>
-          </InstanceSettings>
+        <DataSource ID="GroupPopulationDataSource" TypeID="SC!Microsoft.SystemCenter.GroupPopulator">
+          <RuleId>$MPElement$</RuleId>
+          <GroupInstanceId>$MPElement[Name="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer.Group"]$</GroupInstanceId>
+          <MembershipRules>
+            <MembershipRule>
+              <MonitoringClass>$MPElement[Name="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer"]$</MonitoringClass>
+              <RelationshipClass>$MPElement[Name="SC!Microsoft.SystemCenter.ComputerGroupContainsComputer"]$</RelationshipClass>
+            </MembershipRule>
+          </MembershipRules>
         </DataSource>
       </Discovery>
     </Discoveries>
+    <Rules>
+      <Rule ID="Intel.FabAuto.Custom.GetAgentlessAlive.Unix.EventCreation.Rule" Enabled="true" Target="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer" ConfirmDelivery="false" Remotable="true" Priority="Normal" DiscardLevel="100">
+        <Category>EventCollection</Category>
+        <DataSources>
+          <DataSource ID="Script" TypeID="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.TimedShellCommand.EventDataSource">
+            <TargetSystem>$Target/Host/Property[Type="UnixAgentless!Intel.FabAuto.Unix.Agentless.IOT.Computer"]/PrincipalName$</TargetSystem>
+            <SSHCommand>/usr/bin/uptime</SSHCommand>
+            <UserName>$RunAs[Name="UnixAgentless!Intel.FabAuto.IoT.Agentless.ActionAccount"]/UserName$</UserName>
+            <Password>$RunAs[Name="UnixAgentless!Intel.FabAuto.IoT.Agentless.ActionAccount"]/Password$</Password>
+            <RegExpPattern>.*load.*</RegExpPattern>
+            <EventLevel>2</EventLevel>
+            <IntervalSeconds>1800</IntervalSeconds>
+            <Timeout>300</Timeout>
+          </DataSource>
+        </DataSources>
+        <WriteActions>
+          <WriteAction ID="WriteToDB" TypeID="SC!Microsoft.SystemCenter.CollectEvent" />
+        </WriteActions>
+      </Rule>
+    </Rules>
+    <Monitors>
+      <AggregateMonitor ID="Intel.FabAuto.Custom.Unix.Agentless.Aggregate" Accessibility="Internal" Enabled="true" Target="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer" ParentMonitorID="Health!System.Health.AvailabilityState" Remotable="true" Priority="Normal">
+        <Category>Custom</Category>
+        <AlertSettings AlertMessage="Intel.FabAuto.Custom.Unix.Agentless.Aggregate_AlertMessageResourceID">
+          <AlertOnState>Warning</AlertOnState>
+          <AutoResolve>true</AutoResolve>
+          <AlertPriority>Normal</AlertPriority>
+          <AlertSeverity>MatchMonitorHealth</AlertSeverity>
+        </AlertSettings>
+        <Algorithm>WorstOf</Algorithm>
+      </AggregateMonitor>
+      <UnitMonitor ID="Intel.IOT.FabAuto.Custom.GetAgentlessAlive.Unix.Monitor" Accessibility="Internal" Enabled="true" Target="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer" ParentMonitorID="Intel.FabAuto.Custom.Unix.Agentless.Aggregate" Remotable="true" Priority="Normal" TypeID="Intel.FabAuto.Custom.GetAgentlessAlive.Unix.MonitorType" ConfirmDelivery="false">
+        <Category>Custom</Category>
+        <OperationalStates>
+          <OperationalState ID="Intel.FabAuto.Custom.GetAgentlessAlive.Unix.Monitor_Healthy" MonitorTypeStateID="Healthy" HealthState="Success" />
+          <OperationalState ID="Intel.FabAuto.Custom.GetAgentlessAlive.Unix.Monitor_Warning" MonitorTypeStateID="Warning" HealthState="Warning" />
+          <OperationalState ID="Intel.FabAuto.Custom.GetAgentlessAlive.Unix.Monitor_UnHealthy" MonitorTypeStateID="UnHealthy" HealthState="Error" />
+        </OperationalStates>
+        <Configuration>
+          <ComputerName>$Target/Property[Type="System!System.Entity"]/DisplayName$</ComputerName>
+          <IntervalSeconds>1000</IntervalSeconds>
+          <TimeoutSeconds>300</TimeoutSeconds>
+          <MaxMissingHeartbeats>14</MaxMissingHeartbeats>
+          <EventLookBackMin>-60</EventLookBackMin>
+          <WarningEvent>2</WarningEvent>
+        </Configuration>
+      </UnitMonitor>
+    </Monitors>
   </Monitoring>
+  <Presentation>
+    <StringResources>
+      <StringResource ID="Intel.FabAuto.Custom.Unix.Agentless.Aggregate_AlertMessageResourceID" />
+    </StringResources>
+  </Presentation>
   <LanguagePacks>
     <LanguagePack ID="ENU" IsDefault="true">
       <DisplayStrings>
         <DisplayString ElementID="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer">
           <Name>Agentless IOT Gateway</Name>
         </DisplayString>
-        <DisplayString ElementID="Intel.FabAuto.Unix.IOT.Agentless.Edwards.Pump">
-          <Name>Edwards Pump Gateway</Name>
+        <DisplayString ElementID="Intel.FabAuto.Custom.GetAgentlessAlive.Unix.EventCreation.Rule">
+          <Name>Unix IOT Agentless Alive Event Generation Rule</Name>
+          <Description>Forces each UNIX agentless to generate a rule in SCOM which is then monitored by the Alive monitor</Description>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Custom.Unix.Agentless.Aggregate_AlertMessageResourceID">
+          <Name>Unix SCOM Agentless Health</Name>
+          <Description>The Unix IOT GW  is unhealthy or computer may be down, see Unix broken agents view in the SCOM console</Description>
+        </DisplayString>
+        <DisplayString ElementID="Intel.IOT.FabAuto.Custom.GetAgentlessAlive.Unix.Monitor">
+          <Name>UNIX Agentless Alive Check</Name>
+          <Description>Validates the UNIX IOT GW is properly processing it's monitors</Description>
+        </DisplayString>
+        <DisplayString ElementID="Intel.FabAuto.Unix.IOT.Agentless.Gateway.Computer.Group">
+          <Name>IoT Ubuntu Agentless Computer Group</Name>
         </DisplayString>
       </DisplayStrings>
       <KnowledgeArticles></KnowledgeArticles>
